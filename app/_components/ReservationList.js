@@ -7,11 +7,12 @@ import { useOptimistic } from "react";
 
 function ReservationList({ bookings }) {
   const [optimisticBookings, optimisticDelete] = useOptimistic(
-    bookings,
+    bookings??[],
     (curBookings, bookingId) => {
       return curBookings.filter((booking) => booking.id !== bookingId);
-    }
+    },
   );
+  if (!bookings || !bookings.length) return null;
 
   async function handleDelete(bookingId) {
     optimisticDelete(bookingId);

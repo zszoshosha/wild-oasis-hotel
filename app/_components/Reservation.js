@@ -5,10 +5,21 @@ import LoginMessage from "./LoginMessage";
 import ReservationForm from "./ReservationForm";
 
 async function Reservation({ cabin }) {
-  const [settings, bookedDates] = await Promise.all([
-    getSettings(),
-    getBookedDatesByCabinId(cabin.id),
-  ]);
+  if (!cabin?.id) return null;
+
+  let settings;
+  let bookedDates;
+
+  try {
+    [settings, bookedDates] = await Promise.all([
+      getSettings(),
+      getBookedDatesByCabinId(cabin.id),
+    ]);
+  } catch (error) {
+    console.error(error);
+    return null;
+  }
+
   const session = await auth();
 
   return (

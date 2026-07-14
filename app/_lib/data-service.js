@@ -1,4 +1,3 @@
-import { notFound } from "next/navigation";
 import { eachDayOfInterval } from "date-fns";
 import { supabase } from "./supabase";
 
@@ -17,7 +16,7 @@ export async function getCabin(id) {
 
   if (error) {
     console.error(error);
-    notFound();
+    return null;
   }
 
   return data;
@@ -86,10 +85,10 @@ export async function getBookings(guestId) {
     .from("bookings")
     // We actually also need data on the cabins as well. But let's ONLY take the data that we actually need, in order to reduce downloaded data.
     .select(
-      "id, created_at, startDate, endDate, numNights, numGuests, totalPrice, guestId, cabinId, cabins(name, image)"
+      "id, created_at, startdate, enddate, numnights, numguests, totalPrice, guestId, cabinId, cabins(name, image)",
     )
     .eq("guestId", guestId)
-    .order("startDate");
+    .order("startdate");
 
   if (error) {
     console.error(error);
@@ -100,6 +99,8 @@ export async function getBookings(guestId) {
 }
 
 export async function getBookedDatesByCabinId(cabinId) {
+  if (!cabinId) return [];
+
   let today = new Date();
   today.setUTCHours(0, 0, 0, 0);
   today = today.toISOString();
@@ -109,19 +110,19 @@ export async function getBookedDatesByCabinId(cabinId) {
     .from("bookings")
     .select("*")
     .eq("cabinId", cabinId)
-    .or(`startDate.gte.${today},status.eq.checked-in`);
+    .or(`startdate.gte.${today},status.eq.checked-in`);
 
   if (error) {
     console.error(error);
-    throw new Error("Bookings could not get loaded");
+    return [];
   }
 
   // Converting to actual dates to be displayed in the date picker
   const bookedDates = data
     .map((booking) => {
       return eachDayOfInterval({
-        start: new Date(booking.startDate),
-        end: new Date(booking.endDate),
+        start: new Date(booking.startdate),
+        end: new Date(booking.enddate),
       });
     })
     .flat();
@@ -145,7 +146,7 @@ export async function getSettings() {
 export async function getCountries() {
   try {
     const res = await fetch(
-      "https://restcountries.com/v2/all?fields=name,flag"
+      "https://restcountries.com/v2/all?fields=name,flag",
     );
     const countries = await res.json();
     return countries;
