@@ -1,14 +1,40 @@
 "use server";
 
+import { z } from "zod";
 import { auth, signIn, signOut } from "./auth";
-import { getBookings } from "./data-service";
-import { supabase } from "./supabase";
+import { createClient } from "../../utils/supabase/server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+
+const bookingDataSchema = z.object({
+  startDate: z.coerce.date(),
+  endDate: z.coerce.date(),
+  numNights: z.coerce.number().int().positive(),
+  cabinPrice: z.coerce.number().nonnegative(),
+  cabinId: z.coerce.number().int().positive(),
+});
+
+const createBookingFormSchema = z.object({
+  numGuests: z.coerce.number().int().positive(),
+  observations: z.string().trim().max(1000).catch(""),
+});
+
+const updateBookingFormSchema = z.object({
+  bookingId: z.coerce.number().int().positive(),
+  numGuests: z.coerce.number().int().positive(),
+  observations: z.string().trim().max(1000).catch(""),
+});
+
+function parseFormData(formData, schema) {
+  const values = Object.fromEntries(formData.entries());
+  return schema.parse(values);
+}
 
 export async function updateGuest(formData) {
   const session = await auth();
   if (!session) throw new Error("You must be logged in");
+
+  const supabase = await createClient();
 
   const nationalID = formData.get("nationalID");
   const [nationality, countryFlag] = formData.get("nationality").split("%");
@@ -32,23 +58,32 @@ export async function createBooking(bookingData, formData) {
   const session = await auth();
   if (!session) throw new Error("You must be logged in");
 
+  const supabase = await createClient();
+
+  const parsedBookingData = bookingDataSchema.parse(bookingData);
+  const parsedFormData = parseFormData(formData, createBookingFormSchema);
+
   const newBooking = {
-    ...bookingData,
+    ...parsedBookingData,
     guestId: session.user.guestId,
-    numGuests: Number(formData.get("numGuests")),
-    observations: formData.get("observations").slice(0, 1000),
+    numGuests: parsedFormData.numGuests,
+    observations: parsedFormData.observations,
     extrasPrice: 0,
-    totalPrice: bookingData.cabinPrice,
+    totalPrice: parsedBookingData.cabinPrice,
     isPaid: false,
     hasBreakfast: false,
     status: "unconfirmed",
   };
 
-  const { error } = await supabase.from("bookings").insert([newBooking]);
+  const { data: createdBooking, error } = await supabase
+    .from("bookings")
+    .insert([newBooking])
+    .select()
+    .single();
 
   if (error) throw new Error("Booking could not be created");
 
-  revalidatePath(`/cabins/${bookingData.cabinId}`);
+  revalidatePath(`/cabins/${createdBooking.cabinId}`);
 
   redirect("/cabins/thankyou");
 }
@@ -57,11 +92,19 @@ export async function deleteBooking(bookingId) {
   const session = await auth();
   if (!session) throw new Error("You must be logged in");
 
-  const guestBookings = await getBookings(session.user.guestId);
-  const guestBookingIds = guestBookings.map((booking) => booking.id);
+  const supabase = await createClient();
 
-  if (!guestBookingIds.includes(bookingId))
+  const { data: booking, error: fetchError } = await supabase
+    .from("bookings")
+    .select("guestId")
+    .eq("id", bookingId)
+    .single();
+
+  if (fetchError || !booking) throw new Error("Booking not found");
+
+  if (booking.guestId !== session.user.guestId) {
     throw new Error("You are not allowed to delete this booking");
+  }
 
   const { error } = await supabase
     .from("bookings")
@@ -74,23 +117,34 @@ export async function deleteBooking(bookingId) {
 }
 
 export async function updateBooking(formData) {
-  const bookingId = Number(formData.get("bookingId"));
+  const { bookingId, numGuests, observations } = parseFormData(
+    formData,
+    updateBookingFormSchema,
+  );
+
+  const supabase = await createClient();
 
   // 1) Authentication
   const session = await auth();
   if (!session) throw new Error("You must be logged in");
 
   // 2) Authorization
-  const guestBookings = await getBookings(session.user.guestId);
-  const guestBookingIds = guestBookings.map((booking) => booking.id);
+  const { data: booking, error: bookingError } = await supabase
+    .from("bookings")
+    .select("guestId")
+    .eq("id", bookingId)
+    .single();
 
-  if (!guestBookingIds.includes(bookingId))
+  if (bookingError || !booking) throw new Error("Booking not found");
+
+  if (booking.guestId !== session.user.guestId) {
     throw new Error("You are not allowed to update this booking");
+  }
 
   // 3) Building update data
   const updateData = {
-    numGuests: Number(formData.get("numGuests")),
-    observations: formData.get("observations").slice(0, 1000),
+    numGuests,
+    observations,
   };
 
   // 4) Mutation

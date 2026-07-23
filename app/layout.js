@@ -11,6 +11,8 @@ const josefin = Josefin_Sans({
 
 import "@/app/_styles/globals.css";
 
+export const dynamic = "force-dynamic";
+
 export const metadata = {
   title: {
     template: "%s / The Wild Oasis",
